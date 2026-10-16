@@ -293,6 +293,9 @@ This enhancement would eliminate the need to trigger ingestion manually whenever
 The goal is to maintain an automatically synchronized, locally managed research-paper knowledge base with minimal manual intervention.
 
 
-**Web search**
-- When the papers do not contain the answer, search the web.
-- Show web sources next to the PDF sources in the answer.
+### Web Search Fallback
+
+- **External search:** If the research papers do not contain sufficient information to answer a question, automatically search the web for relevant information.
+- **Combined sources:** Include web references alongside PDF citations, clearly distinguishing external sources from research-paper sources.
+- **Source attribution:** Provide links to web pages and cite the PDF filename and page number for information retrieved from the papers.
+- **Evidence-based answers:** Prioritize relevant evidence from the uploaded papers and use web results to supplement missing information, avoiding unsupported claims.
