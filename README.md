@@ -1,12 +1,11 @@
 # Multimodal RAG for Research Papers
 
-Ask questions about research PDFs and get answers that use the **text, tables and figures**, with **sources (PDF name and page)**.
+A multimodal RAG system that lets you ask questions about research papers and get accurate, source-grounded answers using their text, tables, and figures, with citations to the PDF name and page number.
 
-The project has two parts:
+The project consists of two main components:
 
-1. **An extraction pipeline** that reads research papers of any column layout and keeps text, tables and figures in the right order.
-2. **A multimodal RAG** built with LangChain, Gemini and PostgreSQL. Gemini reads the original figures and the exact tables, not only a text summary.
-
+1. **PDF Extraction Pipeline** — Extracts text, tables, and figures from research papers with different column layouts while preserving their original reading order.
+2. **Multimodal RAG** — Built with LangChain, Gemini, and PostgreSQL, enabling Gemini to analyze original figures and exact tables alongside extracted text to generate context-aware answers.
 ---
 
 ## Extraction pipeline
