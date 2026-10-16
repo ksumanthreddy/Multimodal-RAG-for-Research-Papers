@@ -37,24 +37,24 @@ Research papers come as single-column, double-column and mixed layouts (for exam
 ## How Ingestion Works
 
 ```mermaid
-flowchart LR
-    A["PDF"] --> B["Extraction pipeline<br/>text, tables, figures"]
+flowchart TD
+    A["PDF"] --> B["Extraction pipeline: text, tables, figures"]
 
     B --> T["Extracted text"]
     B --> V["Figures and tables"]
+    B --> G["PNG crops and table markdown: assets table"]
 
-    T --> D["Page text with placeholders<br/>pages table"]
+    T --> D["Page text with placeholders: pages table"]
+    V --> C["Gemini vision: figure and table summaries"]
 
-    V --> C["Gemini vision<br/>summary of each figure and table"]
-
-    B --> G["PNG crops and table markdown<br/>assets table"]
-
-    D --> E["Search text with summaries<br/>chunks and embeddings"]
+    D --> E["Search text with summaries"]
     C --> E
 
+    E --> H["Chunks and embeddings"]
     D --> F[("PostgreSQL + pgvector")]
-    E --> F
+    H --> F
     G --> F
+```
 
 - Where a figure or table was, the page text keeps a placeholder such as `[[FIG:paper.pdf_p4_FIG1]]`.
 - A second copy of the text has the Gemini summary (and the table markdown) written in that place. It is cut into chunks and embedded. This copy is only used for search.
