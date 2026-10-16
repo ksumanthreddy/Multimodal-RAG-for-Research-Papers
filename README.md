@@ -34,6 +34,9 @@ Research papers come as single-column, double-column and mixed layouts (for exam
 
 ### Ingest (once per PDF)
 
+## How Ingestion Works
+
+```mermaid
 flowchart LR
     A["PDF"] --> B["Extraction pipeline<br/>text, tables, figures"]
 
