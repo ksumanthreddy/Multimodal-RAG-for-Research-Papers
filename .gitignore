@@ -1,0 +1,7 @@
+.env
+storage/
+results.md
+__pycache__/
+*.pyc
+.venv/
+data/pdfs/*.pdf

@@ -1,0 +1,6 @@
+# One question per line. Lines starting with # are ignored.
+# Replace these examples with questions about YOUR PDFs.
+What does the first table show?
+What is the main result reported in the paper?
+Which method performs best and what is its score?
+What trend does the first figure show?

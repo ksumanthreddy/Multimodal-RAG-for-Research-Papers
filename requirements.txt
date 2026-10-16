@@ -1,0 +1,15 @@
+# LangChain
+langchain-core>=1.0
+langchain-google-genai>=4.0
+langchain-postgres>=0.0.19
+langchain-text-splitters>=1.0
+
+# PDF reading (your extraction pipeline)
+pymupdf>=1.24
+camelot-py>=1.0
+opencv-python-headless
+
+# database and web page
+psycopg[binary]>=3.1
+streamlit
+python-dotenv
