@@ -34,17 +34,24 @@ Research papers come as single-column, double-column and mixed layouts (for exam
 
 ### Ingest (once per PDF)
 
-```mermaid
 flowchart LR
     A["PDF"] --> B["Extraction pipeline<br/>text, tables, figures"]
-    B --> C["Gemini vision<br/>summary of each figure and table"]
+
+    B --> T["Extracted text"]
+    B --> V["Figures and tables"]
+
+    T --> D["Page text with placeholders<br/>pages table"]
+
+    V --> C["Gemini vision<br/>summary of each figure and table"]
+
     B --> G["PNG crops and table markdown<br/>assets table"]
-    C --> D["Page text with placeholders<br/>pages table"]
-    C --> E["Search text with summaries<br/>chunks and embeddings"]
+
+    D --> E["Search text with summaries<br/>chunks and embeddings"]
+    C --> E
+
     D --> F[("PostgreSQL + pgvector")]
     E --> F
     G --> F
-```
 
 - Where a figure or table was, the page text keeps a placeholder such as `[[FIG:paper.pdf_p4_FIG1]]`.
 - A second copy of the text has the Gemini summary (and the table markdown) written in that place. It is cut into chunks and embedded. This copy is only used for search.
@@ -73,13 +80,30 @@ flowchart LR
 
 ## Results
 
-### Extraction on different layouts
+### Extraction on Different Layouts
 
-Same pipeline, three layouts. Header and footer: orange, Tables: red, Images: blue and Text: green with ordered numbers the output order.
+The same extraction pipeline was tested on three research papers with different layouts.
 
-`demo/pdf/DSA_report_extraction_layout.pdf`
-`demo/pdf/table_paper_extraction_layout.pdf`
-`demo/pdf/paper_1_extraction_layout.pdf`
+**Colour legend:**
+- 🟠 Orange — Headers and footers
+- 🔴 Red — Tables
+- 🔵 Blue — Images and figures
+- 🟢 Green — Text blocks
+- **Numbers** — Extraction order
+
+**1. DSA Project Report**
+
+[View extraction layout PDF](demo/pdfs/DSA_report_extraction_layout.pdf)
+
+**2. Research Paper with Tables**
+
+[View extraction layout PDF](demo/pdfs/table_paper_extraction_layout.pdf)
+
+**3. Research Paper 1**
+
+[View extraction layout PDF](demo/pdfs/paper_1_extraction_layout.pdf)
+
+These annotated PDFs help us inspect the detected content regions and their extraction order, and check how the pipeline handles different research-paper layouts.
 
 ### Question answering
 
