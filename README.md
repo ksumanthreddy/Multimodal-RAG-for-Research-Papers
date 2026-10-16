@@ -8,182 +8,290 @@ The project consists of two main components:
 2. **Multimodal RAG** — Built with LangChain, Gemini, and PostgreSQL, enabling Gemini to analyze original figures and exact tables alongside extracted text to generate context-aware answers.
 ---
 
-## Extraction pipeline
+## Extraction Pipeline
 
-Research papers come as single-column, double-column and mixed layouts (for example, full-width figures and tables inside a two-column page). The pipeline works on PyMuPDF blocks and keeps the order PyMuPDF gives. **Nothing is re-sorted by position**, so column order is not disturbed.
+Research papers often use single-column, double-column, or mixed layouts, where full-width figures and tables may appear within two-column pages. The extraction pipeline uses PyMuPDF blocks and preserves the reading order returned by PyMuPDF without additional positional sorting, helping maintain the original sequence of content across different page layouts.
 
-| Step | What it does | How |
+| Step | Description | Method |
 |---|---|---|
-| Headers, footers, logos | Removes them | Boxes that repeat at the same place on several pages, plus a bottom-of-page zone |
-| Tables | Finds them and keeps them as markdown | PyMuPDF `find_tables`, then Camelot (lattice, then stream) |
-| Images | Finds figures, ignores icons and thin lines | PyMuPDF image blocks with a minimum size |
-| Charts | Finds charts drawn with lines | PyMuPDF `cluster_drawings` |
-| Text | Keeps body text blocks only | Text inside a table or figure box is removed |
-| Captions | Links "Table 1" / "Figure 2" and nearby text to each table or figure | Position above or below the box |
-| Placement | Puts each table or figure at its place in the text order | At the first PyMuPDF block that lies inside it |
-| Crops | Saves every table and figure as a PNG | 200 dpi crop of the bounding box |
+| **Headers & Footers** | Identifies and removes recurring headers, footers, and logos. | Detects repeated bounding boxes across pages and applies a bottom-of-page exclusion zone. |
+| **Tables** | Detects tables and converts their contents into Markdown. | Uses PyMuPDF's `find_tables`, followed by Camelot with lattice and then stream extraction as fallback methods. |
+| **Images & Figures** | Detects meaningful figures while filtering out small icons and thin lines. | Extracts PyMuPDF image blocks based on minimum size thresholds. |
+| **Charts & Diagrams** | Detects charts and diagrams composed of vector drawings. | Uses PyMuPDF's `cluster_drawings` to identify groups of related graphical elements. |
+| **Text Extraction** | Extracts body text while excluding content inside detected table and figure regions. | Filters text blocks using their bounding-box overlap with table and figure regions. |
+| **Caption Association** | Associates captions such as "Table 1" and "Figure 2" with their corresponding elements. | Matches captions and nearby text based on their spatial proximity above or below each bounding box. |
+| **Reading Order** | Places tables and figures within the extracted content sequence. | Inserts each element at the first PyMuPDF text block or content block that falls within its bounding box. |
+| **Image Cropping** | Saves each detected table and figure as a separate PNG image. | Crops the corresponding page region using its bounding box at 200 DPI. |
 
-### Check the extraction visually
 
-`extraction_pipeline.ipynb` runs the extractor on one PDF and saves the same PDF with every bounding box and the block order drawn on it. Blue is text, green is a table, red is a figure, and the number on each box is its order.
+### Visualize and Validate the Extraction
+
+The extraction_pipeline.ipynb notebook runs the extraction pipeline on a sample PDF and generates an annotated version of the original document. Each detected text block, table, and figure is outlined with a bounding box and labeled with its extraction order, making it easy to inspect the results and verify the reading sequence.
+
+Blue: Text blocks
+Green: Tables
+Red: Figures
+Number labels: Extraction order of each block
+
+This visual inspection helps identify missing elements, incorrect bounding boxes, and potential reading-order issues across different page layouts.
 
 ---
 
-## How the RAG works
+## How the RAG System Works
 
-### Ingest (once per PDF)
+The multimodal RAG system has two main stages: **ingestion**, which processes and indexes each PDF, and **question answering**, which retrieves relevant content and uses Gemini to generate answers grounded in the original research paper.
 
-## How Ingestion Works
+### 1. Ingestion — Process Each PDF Once
 
 ```mermaid
 flowchart TD
-    A["PDF"] --> B["Extraction pipeline: text, tables, figures"]
+    A["Research PDF"] --> B["Extraction Pipeline"]
+    B --> T["Extracted Text"]
+    B --> V["Figures and Tables"]
+    B --> G["PNG Crops and Table Markdown"]
 
-    B --> T["Extracted text"]
-    B --> V["Figures and tables"]
-    B --> G["PNG crops and table markdown: assets table"]
-
-    T --> D["Page text with placeholders: pages table"]
-    V --> C["Gemini vision: figure and table summaries"]
-
-    D --> E["Search text with summaries"]
+    T --> D["Page Text with Placeholders"]
+    V --> C["Gemini Vision: Summaries"]
+    D --> E["Searchable Text with Summaries"]
     C --> E
 
-    E --> H["Chunks and embeddings"]
+    E --> H["Chunking and Embeddings"]
     D --> F[("PostgreSQL + pgvector")]
     H --> F
     G --> F
 ```
 
-- Where a figure or table was, the page text keeps a placeholder such as `[[FIG:paper.pdf_p4_FIG1]]`.
-- A second copy of the text has the Gemini summary (and the table markdown) written in that place. It is cut into chunks and embedded. This copy is only used for search.
-- Tables are stored as markdown. Figures are stored as PNG files, and the database keeps their path.
+- **Content extraction:** The extraction pipeline separates text, tables, and figures while preserving the document's reading order.
+- **Placeholders:** The original page text retains references to visual elements, such as `[[FIG:paper.pdf_p4_FIG1]]`, so each figure or table can be identified and retrieved later.
+- **Visual summaries:** Gemini analyzes figures and tables to generate descriptive summaries. Table Markdown is also incorporated into the searchable text.
+- **Search indexing:** The enriched text is split into chunks, converted into embeddings, and stored for semantic retrieval.
+- **Database storage:** PostgreSQL with pgvector stores page text, searchable chunks, embeddings, and references to the original visual assets. Table Markdown and PNG crops are stored as retrievable assets.
 
-### Ask (every question)
+The system maintains two versions of the page content: the original text with placeholders and an enriched version used for search. The original version preserves references to the source material, while the enriched version improves retrieval by including descriptions of visual content.
+
+### 2. Question Answering — Retrieve and Generate
 
 ```mermaid
 flowchart LR
-    Q["Question"] --> V["Vector search"]
-    Q --> K["Keyword search"]
-    V --> M["Merge ranks"]
+    Q["User Question"] --> V["Vector Search"]
+    Q --> K["Keyword Search"]
+
+    V --> M["Reciprocal Rank Fusion"]
     K --> M
-    M --> P["Best 3 pages"]
-    P --> R["Placeholders replaced by<br/>real images and markdown tables"]
-    R --> G["Gemini answer"]
-    G --> S["Answer and sources<br/>PDF name and page"]
+
+    M --> P["Retrieve Top 3 Pages"]
+    P --> R["Reconstruct Page Content"]
+    R --> G["Gemini Multimodal Answer"]
+    G --> S["Answer with PDF and Page Sources"]
 ```
 
-- Vector search finds similar meaning. Keyword search finds exact names and numbers. Their results are merged with reciprocal rank fusion.
-- The best pages are rebuilt for Gemini: every placeholder becomes the real PNG (figures, up to 4 per question) or the markdown table.
-- The summaries help to **find** the right page. The original images and tables are what Gemini **reads**.
-- Sources are read from the database labels, not from the model's memory.
+- **Hybrid retrieval:** Vector search identifies semantically relevant content, while keyword search finds exact terms, identifiers, and numerical values.
+- **Rank fusion:** Results from both retrieval methods are combined using Reciprocal Rank Fusion (RRF) to identify the most relevant pages.
+- **Page selection:** The system selects the top three pages for further analysis.
+- **Content reconstruction:** Placeholders are replaced with the corresponding original figure images or Markdown tables. Up to four figure images are included per question.
+- **Multimodal reasoning:** Gemini receives the retrieved text together with the original figures and exact table contents, allowing it to reason across textual and visual evidence.
+- **Source attribution:** Answers include the PDF filename and page number, retrieved from database metadata rather than relying on Gemini to recall or invent citations.
+
+**Key principle:** Figure and table summaries improve retrieval, but they are not substitutes for the original content. The summaries help locate relevant pages; Gemini then analyzes the original figure images and table data to produce evidence-grounded answers.
 
 ---
-
 ## Results
 
-### Extraction on Different Layouts
+### Extraction Across Different Document Layouts
 
-The same extraction pipeline was tested on three research papers with different layouts.
+The extraction pipeline was evaluated on three research documents with different layouts to assess its ability to detect content regions and preserve the extraction order.
 
-**Colour legend:**
-- 🟠 Orange — Headers and footers
-- 🔴 Red — Tables
-- 🔵 Blue — Images and figures
-- 🟢 Green — Text blocks
-- **Numbers** — Extraction order
+**Colour legend**
+
+- 🟠 **Orange** — Headers and footers
+- 🔴 **Red** — Tables
+- 🔵 **Blue** — Images and figures
+- 🟢 **Green** — Text blocks
+- **Numbers** — Extraction order of each block
 
 **1. DSA Project Report**
 
-[View extraction layout PDF](demo/pdfs/DSA_report_extraction_layout.pdf)
+[View annotated extraction PDF](demo/pdfs/DSA_report_extraction_layout.pdf)
 
 **2. Research Paper with Tables**
 
-[View extraction layout PDF](demo/pdfs/table_paper_extraction_layout.pdf)
+[View annotated extraction PDF](demo/pdfs/table_paper_extraction_layout.pdf)
 
 **3. Research Paper 1**
 
-[View extraction layout PDF](demo/pdfs/paper_1_extraction_layout.pdf)
+[View annotated extraction PDF](demo/pdfs/paper_1_extraction_layout.pdf)
 
-These annotated PDFs help us inspect the detected content regions and their extraction order, and check how the pipeline handles different research-paper layouts.
+These annotated PDFs provide a visual way to inspect detected content regions, verify their extraction order, and evaluate how the pipeline handles different document layouts, including tables, figures, and text blocks.
 
-### Question answering
+### Question Answering Results
 
-**Relevant question: answer with sources and the original figure**
+The multimodal RAG system was evaluated using two scenarios to demonstrate its ability to answer questions grounded in the research papers and handle questions that fall outside their coverage.
+
+**1. Relevant Question — Answer with Sources and Original Figures**
 
 ![Relevant result](demo/images/relevant-result.png)
 
-**Question not covered by the papers**
+The system retrieves relevant content, generates an answer using the original figures and table data where applicable, and provides source references containing the PDF filename and page number.
+
+**2. Question Outside the Available Research Papers**
 
 ![Not relevant result](demo/images/no-relevant-result.png)
 
+When a question is not supported by the available papers, the system demonstrates its ability to identify insufficient relevant evidence rather than generate an unsupported answer.
+
 ---
 
-## Tech stack
+## Tech Stack
 
-| Area | Tools |
+| Area | Technologies |
 |---|---|
-| Language | Python |
-| PDF extraction | PyMuPDF, Camelot |
-| LLM, vision, embeddings | Google Gemini (`gemini-3.5-flash-lite`, `gemini-embedding-2`) |
-| Orchestration | LangChain (`langchain-core`, `langchain-google-genai`, `langchain-postgres`, `langchain-text-splitters`) |
-| Database | PostgreSQL with pgvector |
-| Interface | Streamlit |
+| Programming Language | Python |
+| PDF Extraction | PyMuPDF, Camelot |
+| LLM, Vision & Embeddings | Google Gemini (`gemini-3.5-flash-lite`, `gemini-embedding-2`) |
+| Orchestration & Retrieval | LangChain (`langchain-core`, `langchain-google-genai`, `langchain-postgres`, `langchain-text-splitters`) |
+| Database & Vector Search | PostgreSQL with pgvector |
+| User Interface | Streamlit |
 
-LangChain parts used: `ChatGoogleGenerativeAI`, `GoogleGenerativeAIEmbeddings`, `PGVector`, `RecursiveCharacterTextSplitter`, a custom `BaseRetriever` for keyword search, `RunnableParallel`, and an LCEL chain with `RunnablePassthrough.assign`.
+### LangChain Components
 
+The system uses the following LangChain components to implement ingestion, retrieval, and question answering:
+
+- `ChatGoogleGenerativeAI` — Integrates Gemini for language generation and multimodal reasoning.
+- `GoogleGenerativeAIEmbeddings` — Generates embeddings for semantic search.
+- `PGVector` — Stores and retrieves vector embeddings using PostgreSQL and pgvector.
+- `RecursiveCharacterTextSplitter` — Splits extracted and enriched text into manageable chunks.
+- Custom `BaseRetriever` — Implements keyword-based retrieval.
+- `RunnableParallel` — Executes retrieval operations in parallel.
+- `RunnablePassthrough.assign` — Passes and enriches data within the processing pipeline.
+- **LCEL chain** — Connects retrieval, context preparation, and answer generation into a unified workflow.
 ---
 
-## Project structure
+## Project Structure
 
-```
-config.py                   settings
-pdf_extractor.py            extraction pipeline
-models.py                   Gemini chat model, embeddings, image description
-db.py                       PostgreSQL tables, PGVector, keyword search
-ingest.py                   PDF to database
-rag.py                      question to answer with sources (LCEL chain)
-app.py                      Streamlit page
-check_setup.py              tests the database and Gemini
-run_questions.py            runs many questions from questions.txt
-extraction_pieline.ipynb      give extraction layoutpdf         
-demo/images/                result images used in this README
-demo/pdfs                   extraction layout pdf results
+The project is organized into modules for PDF extraction, multimodal processing, database management, ingestion, retrieval, and the Streamlit interface.
+
+```text
+config.py                    # Application settings
+pdf_extractor.py             # PDF extraction pipeline
+models.py                    # Gemini chat model, embeddings, and image descriptions
+db.py                        # PostgreSQL tables, PGVector, and keyword search
+ingest.py                    # Extracts PDFs and stores content in the database
+rag.py                       # Question answering with source attribution using LCEL
+app.py                       # Streamlit user interface
+check_setup.py               # Validates database connectivity and Gemini configuration
+run_questions.py             # Runs multiple questions from questions.txt
+extraction_pipeline.ipynb    # Visualizes extraction layouts and block order
+
+demo/
+├── images/                  # Result images used in the README
+└── pdfs/                    # Annotated extraction-layout PDF results
 ```
 
-| Table | Holds |
+### Database Schema
+
+The system uses PostgreSQL to store extracted document content, visual assets, and searchable embeddings.
+
+| Table | Purpose |
 |---|---|
-| `pages` | page text with placeholders |
-| `assets` | every figure and table: caption, summary, table markdown, PNG path |
-| `langchain_pg_embedding` | chunks and their vectors |
+| `pages` | Stores page-level text with placeholders referencing figures and tables. |
+| `assets` | Stores metadata for figures and tables, including captions, summaries, table Markdown, and PNG file paths. |
+| `langchain_pg_embedding` | Stores searchable text chunks and their vector embeddings for semantic retrieval. |
 
 ---
 
-## Getting started
+## Getting Started
 
-Requires Python 3.10+, a PostgreSQL database with pgvector, and a free Gemini API key from https://aistudio.google.com/apikey.
+### Prerequisites
+
+- Python 3.10 or later
+- PostgreSQL with the pgvector extension
+- A Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey)
+
+### Installation and Setup
+
+**1. Install dependencies**
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env          # add GEMINI_API_KEY and DATABASE_URL
-python check_setup.py         # tests the database and Gemini
-python db.py                  # creates the tables
-python ingest.py              # reads the PDFs in data/pdfs/
-streamlit run app.py          # opens the web page
 ```
 
-Command line: `python rag.py "your question"`
+**2. Configure environment variables**
+
+Copy the example environment file and add your credentials:
+
+```bash
+cp .env.example .env
+```
+
+Set the following variables in `.env`:
+
+```dotenv
+GEMINI_API_KEY=your_gemini_api_key
+DATABASE_URL=your_postgresql_connection_url
+```
+
+**3. Verify the setup**
+
+```bash
+python check_setup.py
+```
+
+This checks the database connection and Gemini configuration.
+
+**4. Initialize the database**
+
+```bash
+python db.py
+```
+
+**5. Ingest research papers**
+
+Place your PDFs in `data/pdfs/` and run:
+
+```bash
+python ingest.py
+```
+
+The ingestion pipeline extracts text, tables, and figures, generates visual summaries, and stores the content and search embeddings in the database.
+
+**6. Launch the application**
+
+```bash
+streamlit run app.py
+```
+
+Open the local URL displayed by Streamlit to start asking questions about your research papers.
+
+### Command-Line Usage
+
+You can also ask questions directly from the terminal without opening the Streamlit interface:
+
+```bash
+python rag.py "your question"
+```
+
+To run multiple questions from a file:
+
+```bash
+python run_questions.py
+```
 
 ---
 
-## Future improvements
+## Future Improvements
 
-**Local folder watcher**
-- Watch one local folder with `watchdog`.
-- New PDF: extract and add it to the database.
-- Changed PDF: replace its old data.
-- Deleted PDF: remove its pages, assets and chunks.
-- The database then stays in sync with the folder, running fully locally.
+### Automated PDF Folder Monitoring
+
+Add a local folder watcher using Python's `watchdog` library to keep the database synchronized with changes to the PDF collection.
+
+- **New PDF:** Automatically extract its content and add it to the database.
+- **Modified PDF:** Reprocess the document and replace its existing pages, assets, and embeddings.
+- **Deleted PDF:** Remove the corresponding pages, assets, and search chunks from the database.
+
+This enhancement would eliminate the need to trigger ingestion manually whenever the document collection changes.
+
+The goal is to maintain an automatically synchronized, locally managed research-paper knowledge base with minimal manual intervention.
+
 
 **Web search**
 - When the papers do not contain the answer, search the web.
